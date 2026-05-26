@@ -2,6 +2,8 @@
 
 Python automation project that reads raw CSV sales data, cleans it with Pandas, generates multi-dimensional revenue analysis, exports a polished multi-sheet Excel report with OpenPyXL charts and KPI summaries, and can email the finished report through Gmail SMTP using secure TLS.
 
+The repository also includes a native Android Studio app that reads the bundled sample CSV and displays an on-device sales KPI dashboard.
+
 ## Features
 
 - Cleans raw CSV sales data by parsing dates, normalizing text fields, removing duplicate orders, and validating numeric columns.
@@ -30,6 +32,34 @@ The generated report is saved to:
 ```text
 output/sales_report.xlsx
 ```
+
+## Run in Android Studio
+
+1. Open Android Studio.
+2. Select **File > Open**.
+3. Choose this project folder:
+
+```text
+Automated-Sales-Report-Generator
+```
+
+4. Let Gradle sync finish.
+5. Select the `app` run configuration.
+6. Click **Run** on an emulator or connected Android phone.
+
+The Android app is located in:
+
+```text
+app/src/main/java/com/miryakub/salesreport/MainActivity.java
+```
+
+It loads:
+
+```text
+app/src/main/assets/sample_sales.csv
+```
+
+The mobile app calculates total orders, units sold, net revenue, average order value, revenue by region, revenue by category, and monthly trend. It also includes a **Share Report** button for sending the generated summary through Android's share sheet.
 
 ## Use Your Own CSV
 
@@ -79,6 +109,7 @@ Use a daily, weekly, or monthly trigger depending on how often new sales CSV fil
 
 ```text
 .
+|-- app/                  # Native Android Studio project
 |-- sales_reporter.py     # Main automation pipeline
 |-- sample_sales.csv      # Demo input data
 |-- requirements.txt      # Python dependencies

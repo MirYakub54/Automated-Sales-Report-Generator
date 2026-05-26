@@ -4,3 +4,11 @@ __pycache__/
 venv/
 output/
 .env
+
+# Android / Gradle
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/

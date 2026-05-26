@@ -44,7 +44,7 @@ def load_and_clean_sales(csv_path: Path) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {', '.join(sorted(missing))}")
 
     df = df.drop_duplicates(subset=["order_id"]).copy()
-    df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
+    df["order_date"] = parse_order_dates(df["order_date"])
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
     df["unit_price"] = pd.to_numeric(df["unit_price"], errors="coerce").fillna(0.0)
     df["discount"] = pd.to_numeric(df["discount"], errors="coerce").fillna(0.0).clip(0, 1)
@@ -61,6 +61,18 @@ def load_and_clean_sales(csv_path: Path) -> pd.DataFrame:
     df["month"] = df["order_date"].dt.to_period("M").astype(str)
     df["quarter"] = df["order_date"].dt.to_period("Q").astype(str)
     return df.sort_values("order_date").reset_index(drop=True)
+
+
+def parse_order_dates(values: pd.Series) -> pd.Series:
+    parsed = pd.to_datetime(values, errors="coerce", format="%Y-%m-%d")
+    missing = parsed.isna()
+    if missing.any():
+        parsed.loc[missing] = pd.to_datetime(
+            values.loc[missing],
+            errors="coerce",
+            dayfirst=True,
+        )
+    return parsed
 
 
 def build_analysis(df: pd.DataFrame) -> dict[str, pd.DataFrame]:

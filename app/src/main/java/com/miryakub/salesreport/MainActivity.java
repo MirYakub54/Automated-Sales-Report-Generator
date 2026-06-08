@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -14,16 +15,19 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 public class MainActivity extends Activity {
+    private static final int PICK_CSV_REQUEST = 1001;
     private static final int BACKGROUND = Color.rgb(248, 250, 252);
     private static final int INK = Color.rgb(15, 23, 42);
     private static final int MUTED = Color.rgb(71, 85, 105);
@@ -32,13 +36,14 @@ public class MainActivity extends Activity {
 
     private final NumberFormat currency = NumberFormat.getCurrencyInstance(new Locale("en", "IN"));
     private Report report;
+    private String sourceLabel = "Bundled sample_sales.csv";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         try {
-            report = buildReport(loadSales());
+            report = buildReport(loadBundledSales());
             setContentView(createContent());
         } catch (Exception exception) {
             Toast.makeText(this, "Unable to load sales report", Toast.LENGTH_LONG).show();
@@ -62,13 +67,21 @@ public class MainActivity extends Activity {
         container.addView(title);
 
         TextView subtitle = text(
-                "CSV analysis dashboard generated on-device from bundled sample sales data.",
+                "Current source: " + sourceLabel,
                 15,
                 MUTED,
                 Typeface.NORMAL
         );
         subtitle.setPadding(0, dp(8), 0, dp(18));
         container.addView(subtitle);
+
+        Button uploadButton = new Button(this);
+        uploadButton.setText("Upload CSV File");
+        uploadButton.setTextColor(Color.WHITE);
+        uploadButton.setBackgroundColor(ACCENT);
+        uploadButton.setAllCaps(false);
+        uploadButton.setOnClickListener(view -> openCsvPicker());
+        container.addView(uploadButton, fullWidthButtonParams(0, dp(16)));
 
         LinearLayout kpiGrid = new LinearLayout(this);
         kpiGrid.setOrientation(LinearLayout.VERTICAL);
@@ -93,14 +106,31 @@ public class MainActivity extends Activity {
         shareButton.setBackgroundColor(ACCENT);
         shareButton.setAllCaps(false);
         shareButton.setOnClickListener(view -> shareReport());
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(52)
-        );
-        buttonParams.setMargins(0, dp(18), 0, 0);
-        container.addView(shareButton, buttonParams);
+        container.addView(shareButton, fullWidthButtonParams(dp(18), 0));
 
         return scrollView;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_CSV_REQUEST || resultCode != RESULT_OK || data == null) {
+            return;
+        }
+
+        Uri uri = data.getData();
+        if (uri == null) {
+            return;
+        }
+
+        try {
+            report = buildReport(loadSalesFromUri(uri));
+            sourceLabel = "Uploaded CSV";
+            setContentView(createContent());
+            Toast.makeText(this, "Report generated from uploaded file", Toast.LENGTH_SHORT).show();
+        } catch (Exception exception) {
+            Toast.makeText(this, "CSV error: " + exception.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private TextView section(String label) {
@@ -160,33 +190,121 @@ public class MainActivity extends Activity {
         return view;
     }
 
-    private List<Sale> loadSales() throws Exception {
+    private LinearLayout.LayoutParams fullWidthButtonParams(int topMargin, int bottomMargin) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(52)
+        );
+        params.setMargins(0, topMargin, 0, bottomMargin);
+        return params;
+    }
+
+    private void openCsvPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/csv", "text/comma-separated-values", "text/plain"});
+        startActivityForResult(intent, PICK_CSV_REQUEST);
+    }
+
+    private List<Sale> loadBundledSales() throws Exception {
+        try (InputStream stream = getAssets().open("sample_sales.csv")) {
+            return loadSales(stream);
+        }
+    }
+
+    private List<Sale> loadSalesFromUri(Uri uri) throws Exception {
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            if (stream == null) {
+                throw new IllegalArgumentException("Unable to open selected file");
+            }
+            return loadSales(stream);
+        }
+    }
+
+    private List<Sale> loadSales(InputStream stream) throws Exception {
         List<Sale> sales = new ArrayList<>();
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                getAssets().open("sample_sales.csv"),
-                StandardCharsets.UTF_8
-        ))) {
-            String line = reader.readLine();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new IllegalArgumentException("CSV is empty");
+            }
+
+            Map<String, Integer> columns = columnIndexes(parseCsvLine(headerLine));
+            requireColumns(columns);
+
+            String line;
             while ((line = reader.readLine()) != null) {
-                String[] parts = line.split(",", -1);
-                if (parts.length < 9) {
+                if (line.trim().isEmpty()) {
                     continue;
                 }
+                List<String> parts = parseCsvLine(line);
                 Sale sale = new Sale();
-                sale.orderId = parts[0].trim();
-                sale.orderMonth = monthName(parts[1].trim());
-                sale.region = parts[3].trim();
-                sale.category = parts[4].trim();
-                sale.product = parts[5].trim();
-                sale.quantity = Integer.parseInt(parts[6].trim());
-                sale.unitPrice = Double.parseDouble(parts[7].trim());
-                sale.discount = Double.parseDouble(parts[8].trim());
+                sale.orderId = value(parts, columns, "order_id");
+                sale.orderMonth = monthName(value(parts, columns, "order_date"));
+                sale.region = value(parts, columns, "region");
+                sale.category = value(parts, columns, "category");
+                sale.product = value(parts, columns, "product");
+                sale.quantity = Integer.parseInt(value(parts, columns, "quantity"));
+                sale.unitPrice = Double.parseDouble(value(parts, columns, "unit_price"));
+                sale.discount = Double.parseDouble(value(parts, columns, "discount"));
                 sales.add(sale);
             }
         }
 
+        if (sales.isEmpty()) {
+            throw new IllegalArgumentException("CSV has no sales rows");
+        }
         return sales;
+    }
+
+    private List<String> parseCsvLine(String line) {
+        List<String> cells = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int index = 0; index < line.length(); index++) {
+            char character = line.charAt(index);
+            if (character == '"') {
+                if (inQuotes && index + 1 < line.length() && line.charAt(index + 1) == '"') {
+                    current.append('"');
+                    index++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (character == ',' && !inQuotes) {
+                cells.add(current.toString().trim());
+                current.setLength(0);
+            } else {
+                current.append(character);
+            }
+        }
+
+        cells.add(current.toString().trim());
+        return cells;
+    }
+
+    private Map<String, Integer> columnIndexes(List<String> headers) {
+        Map<String, Integer> indexes = new HashMap<>();
+        for (int index = 0; index < headers.size(); index++) {
+            indexes.put(headers.get(index).trim().toLowerCase(Locale.US), index);
+        }
+        return indexes;
+    }
+
+    private void requireColumns(Map<String, Integer> columns) {
+        String[] required = {"order_id", "order_date", "region", "category", "product", "quantity", "unit_price", "discount"};
+        for (String column : required) {
+            if (!columns.containsKey(column)) {
+                throw new IllegalArgumentException("Missing column: " + column);
+            }
+        }
+    }
+
+    private String value(List<String> parts, Map<String, Integer> columns, String column) {
+        int index = columns.get(column);
+        return index < parts.size() ? parts.get(index).trim() : "";
     }
 
     private Report buildReport(List<Sale> sales) {
@@ -207,7 +325,8 @@ public class MainActivity extends Activity {
     }
 
     private String monthName(String date) {
-        String[] parts = date.split("-");
+        String separator = date.contains("-") ? "-" : "/";
+        String[] parts = date.split(separator);
         if (parts.length < 2) {
             return "Unknown";
         }
@@ -226,8 +345,12 @@ public class MainActivity extends Activity {
                 "November",
                 "December"
         };
-        int month = Integer.parseInt(parts[1]);
-        return month >= 1 && month <= 12 ? months[month - 1] : "Unknown";
+        try {
+            int month = Integer.parseInt(parts[0].length() == 4 ? parts[1] : parts[1]);
+            return month >= 1 && month <= 12 ? months[month - 1] : "Unknown";
+        } catch (NumberFormatException exception) {
+            return "Unknown";
+        }
     }
 
     private void add(Map<String, Double> map, String key, double value) {

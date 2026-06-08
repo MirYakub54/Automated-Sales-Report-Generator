@@ -2,7 +2,7 @@
 
 Python automation project that reads raw CSV sales data, cleans it with Pandas, generates multi-dimensional revenue analysis, exports a polished multi-sheet Excel report with OpenPyXL charts and KPI summaries, and can email the finished report through Gmail SMTP using secure TLS.
 
-The repository also includes a native Android Studio app that reads the bundled sample CSV and displays an on-device sales KPI dashboard.
+The repository also includes a native Android Studio app that lets users upload a CSV file from the phone and automatically generates an on-device sales KPI dashboard.
 
 ## Features
 
@@ -53,13 +53,13 @@ The Android app is located in:
 app/src/main/java/com/miryakub/salesreport/MainActivity.java
 ```
 
-It loads:
+It includes a bundled demo CSV:
 
 ```text
 app/src/main/assets/sample_sales.csv
 ```
 
-The mobile app calculates total orders, units sold, net revenue, average order value, revenue by region, revenue by category, and monthly trend. It also includes a **Share Report** button for sending the generated summary through Android's share sheet.
+When the app opens, it generates a dashboard from the bundled sample file. Tap **Upload CSV File** to choose another CSV from the Android file picker; the app automatically recalculates total orders, units sold, net revenue, average order value, revenue by region, revenue by category, and monthly trend. Tap **Share Report** to send the generated summary through Android's share sheet.
 
 ## Use Your Own CSV
 
@@ -67,6 +67,21 @@ Your CSV should include these columns:
 
 ```text
 order_id, order_date, customer, region, category, product, quantity, unit_price, discount
+```
+
+The Android upload flow reads these columns from the header row:
+
+```text
+order_id, order_date, region, category, product, quantity, unit_price, discount
+```
+
+Supported date examples:
+
+```text
+04-01-2025
+2025-01-04
+04/01/2025
+2025/01/04
 ```
 
 Run:
